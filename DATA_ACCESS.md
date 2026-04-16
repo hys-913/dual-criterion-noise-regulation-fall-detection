@@ -6,19 +6,19 @@
 
 ## 1. Source Datasets
 
-This study uses four publicly available datasets. No new human-subject data was collected.
+This study uses public visual datasets and reviewer-release audit artifacts. No new human-subject data was collected.
 
 ### 1.1 Leeds Millennium Dataset (Primary)
 
 | Field | Value |
 |-------|-------|
-| Role | Training, validation, and test benchmark (RGB frames) |
+| Role | Primary source for the benchmark's fall class and part of the non-fall class (RGB frames) |
 | Provider | School of Computing, University of Leeds |
 | Access | Available upon request from the dataset maintainers. We obtained the dataset through direct correspondence with the original authors; access is typically granted within 2 weeks of request. |
 | License | Research use only; no redistribution without permission |
-| Redistribution | The source images are included in the `dataset/` directory of this supplementary package under the research-use license for the purpose of peer review and reproducibility |
+| Redistribution | The source images are provided in the `dataset/` directory of the companion GitHub repository linked with the submission under the research-use license for the purpose of peer review and reproducibility |
 | Content | RGB and depth video sequences of daily activities and fall events, collected under informed consent with ethical approval from the University of Leeds |
-| Our usage | RGB frames extracted at 1 fps; split into train/val/test per `data/split_manifest.csv` |
+| Our usage | RGB frames extracted at 1 fps; 4,172 released benchmark images are attributed to Leeds in `data/split_manifest.csv` |
 | **Reviewer reproduction** | Reviewers can evaluate all results directly using the images in `dataset/`. For independent access, contact the Leeds dataset maintainers. |
 
 ### 1.2 COCO 2017 (Negative-class augmentation)
@@ -60,25 +60,25 @@ This study uses four publicly available datasets. No new human-subject data was 
 
 ## 2. Benchmark Reconstruction
 
-The benchmark used in this paper can be exactly reconstructed from `data/split_manifest.csv`:
+The companion GitHub repository linked with the submission ships the released benchmark directly in `dataset/` and documents its provenance through `data/split_manifest.csv`:
 
 ```
-Step 1: Obtain source datasets (see URLs above)
-Step 2: Extract frames per source dataset instructions
-Step 3: Use split_manifest.csv to assign each frame to train/val/test
+Step 1: Inspect the released benchmark in dataset/
+Step 2: Use split_manifest.csv to confirm each frame's split and source attribution
         - Column 'sample_id': relative path within the source dataset
         - Column 'source_dataset': which source dataset the frame belongs to
         - Column 'split': train / val / test
         - Column 'label': fall / normal
-Step 4: Apply physical filtering (scripts/physical_filtering.py)
+Step 3: Recompute the physical quality audit if desired (scripts/physical_filtering.py)
         - Thresholds: blur > 15 px, occlusion > 40%, entropy < 2.0 bits
-        - Scores for all retained samples: data/physical_scores.csv
-Step 5: Apply semantic filtering (scripts/semantic_filtering.py)
-        - Removed samples: data/semantic_labels_removed.csv (320 samples)
+        - Scores for all benchmark samples: data/physical_scores.csv
+Step 4: Inspect the semantic audit exports
+        - Exclusion recommendations: data/semantic_labels_removed.csv (320 samples)
         - Retained hard negatives: data/semantic_labels_retained.csv (156 samples)
+        - Two-expert agreement register: data/interrater_agreement.csv (476 samples)
 ```
 
-**Note**: The complete dataset (5,841 images with train/val/test splits) is included in the `dataset/` directory of this supplementary package. The split manifest (`data/split_manifest.csv`) provides full traceability of each sample to its original source dataset.
+**Note**: The released benchmark (5,841 images with train/val/test splits) is provided in the `dataset/` directory of the companion GitHub repository linked with the submission. The split manifest provides source attribution for the packaged benchmark images. The semantic audit tables use anonymized review identifiers rather than image paths.
 
 ---
 
@@ -86,7 +86,7 @@ Step 5: Apply semantic filtering (scripts/semantic_filtering.py)
 
 - **Annotators**: Two domain experts with computer vision background
 - **Task**: Assign semantic noise category (theatrical / occupational / transitional) to ambiguous samples
-- **Agreement**: Cohen's kappa = 0.79 (substantial agreement)
+- **Agreement**: Cohen's kappa = 0.85, raw agreement = 427 / 476 (89.7%)
 - **Raw data**: `data/interrater_agreement.csv` (476 annotated samples)
 - **Rubric**: Detailed annotation guidelines are described in manuscript Section 3.4
 
@@ -97,8 +97,8 @@ Step 5: Apply semantic filtering (scripts/semantic_filtering.py)
 - All experiments use 5 random seeds (42, 43, 44, 45, 46)
 - Mean +/- SD reported for all metrics
 - Training scripts with exact hyperparameters are provided in `scripts/`
-- Model checkpoints (when provided) correspond to seed 42
-- Code and all artifacts will be released on GitHub upon paper acceptance
+- The repository linked with the submission focuses on the benchmark split, audit tables, and scripts; trained checkpoints are not bundled
+- The GitHub repository link supplied for review can be converted to a public release upon paper acceptance, subject to source-dataset license constraints
 
 ---
 

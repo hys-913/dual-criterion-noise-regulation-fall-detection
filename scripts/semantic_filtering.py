@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
-Semantic Noise Filtering (Algorithm 1, Phase 2)
-================================================
-Identifies and regulates semantically ambiguous samples:
+Semantic Audit Reference Implementation (Algorithm 1, Phase 2)
+==============================================================
+Demonstrates the thresholding logic used for semantically ambiguous samples:
   - Theatrical performances (non-physiological postures)
   - Occupational activities (mimicking fall kinematics)
   - Transitional states (sitting-to-lying, standing-to-sitting)
 
-Decision rule: remove a semantic-noise sample if excluding it from
-training improves validation F1 by > F1_THRESH; otherwise retain as
-a hard negative.
+The reviewer package ships anonymized semantic-audit tables rather than a
+path-resolved post-exclusion directory tree. This script therefore serves as a
+reference implementation for the leave-one-out thresholding logic used during
+the study rather than a one-command replay of the released semantic audit.
 
 Usage:
     python semantic_filtering.py \
@@ -71,7 +72,8 @@ def quick_train_eval(train_loader, val_loader, device, epochs=5):
     )
     model = model.to(device)
     criterion = nn.BCEWithLogitsLoss()
-    optimizer = optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
+    optimizer = optim.SGD(model.parameters(), lr=1e-2, momentum=0.9,
+                          weight_decay=1e-4)
 
     for _ in range(epochs):
         model.train()
@@ -134,8 +136,9 @@ def main():
 
     print(f"Semantic filtering with F1 threshold = {args.f1_thresh}%")
     print(f"Device: {device}")
-    print("NOTE: Full leave-one-out is expensive. In practice, batch evaluation "
-          "with grouped category removal is used (see manuscript Section 3.4).")
+    print("NOTE: The reviewer package distributes anonymized semantic-audit "
+          "registers. This script documents the reference thresholding logic; "
+          "the released CSVs support count verification and category analysis.")
 
 
 if __name__ == "__main__":

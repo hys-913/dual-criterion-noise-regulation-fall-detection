@@ -1,212 +1,178 @@
 #!/usr/bin/env python3
 """
-Generate Manuscript Tables from Experiment Results
-==================================================
-Reads evaluation outputs and generates LaTeX tables matching
-the 10 tables in the manuscript.
+Generate audit-summary tables from the bundled reviewer artifacts.
 
-Usage:
-    python generate_tables.py --results_dir <path>
+This utility inspects the released benchmark split plus the physical/semantic
+audit CSV files and emits compact LaTeX tables for supplementary use.
 """
 
 import argparse
-import json
+import csv
 import os
-import glob
+from collections import Counter, defaultdict
 
 
-def table_curation_breakdown():
-    """Table 1: Dataset curation breakdown."""
-    return r"""
-\begin{table}[tb]
-\caption{Dataset curation breakdown after dual-criterion regulation.}
-\label{tab:curation}
-\begin{tabular}{lrrr}
+def count_benchmark(dataset_dir):
+    counts = defaultdict(int)
+    for split in ("train", "val", "test"):
+        for label in ("fall", "normal"):
+            folder = os.path.join(dataset_dir, split, label)
+            if not os.path.isdir(folder):
+                continue
+            counts[(split, label)] = sum(
+                1 for name in os.listdir(folder)
+                if name.lower().endswith((".jpg", ".jpeg", ".png", ".bmp"))
+            )
+    return counts
+
+
+def load_csv(path):
+    with open(path, newline="", encoding="utf-8") as handle:
+        return list(csv.DictReader(handle))
+
+
+def build_split_table(counts):
+    split_totals = {}
+    for split in ("train", "val", "test"):
+        fall = counts.get((split, "fall"), 0)
+        normal = counts.get((split, "normal"), 0)
+        split_totals[split] = (fall, normal, fall + normal)
+
+    return rf"""
+\begin{{table}}[tb]
+\caption{{Released benchmark split bundled in the reviewer package.}}
+\label{{tab:artifact_split}}
+\centering
+\begin{{tabular}}{{lccc}}
 \toprule
 Split & Fall & Non-fall & Total \\
 \midrule
-Train & 2,620 & 1,628 & 4,248 \\
-Val   & 655   & 407   & 1,062 \\
-Test  & 323   & 208   & 531   \\
-\midrule
-Total & 3,598 & 2,243 & 5,841 \\
+Train & {split_totals["train"][0]} & {split_totals["train"][1]} & {split_totals["train"][2]} \\
+Validation & {split_totals["val"][0]} & {split_totals["val"][1]} & {split_totals["val"][2]} \\
+Test & {split_totals["test"][0]} & {split_totals["test"][1]} & {split_totals["test"][2]} \\
 \bottomrule
-\end{tabular}
-\end{table}
+\end{{tabular}}
+\end{{table}}
 """
 
 
-def table_baselines():
-    """Table 2: Baseline comparison (9 methods)."""
-    return r"""
-\begin{table}[tb]
-\caption{Comparison with noise-handling baselines on the regulated dataset.
-All methods use MobileNetV3-Small. Mean $\pm$ SD over 5 seeds.}
-\label{tab:baselines}
-\begin{tabular}{lcccc}
+def build_physical_table(rows):
+    flag_key = "quality_flag" if rows and "quality_flag" in rows[0] else "removed"
+    by_split = Counter()
+    total_flagged = 0
+    for row in rows:
+        flagged = str(row.get(flag_key, "")).lower() == "true"
+        if flagged:
+            total_flagged += 1
+            by_split[row.get("split", "unknown")] += 1
+
+    return rf"""
+\begin{{table}}[tb]
+\caption{{Physical-quality audit summary from \texttt{{physical\_scores.csv}}.}}
+\label{{tab:artifact_physical}}
+\centering
+\begin{{tabular}}{{lcc}}
 \toprule
-Method & Acc (\%) & F1 (\%) & Sens (\%) & AUC (\%) \\
+Scope & Samples & Flagged \\
 \midrule
-\textbf{Dual-Criterion (Ours)} & \textbf{89.8 $\pm$ 0.6} & \textbf{91.2} & \textbf{92.3} & \textbf{97.7} \\
-GCE              & 86.5 $\pm$ 0.8 & 88.1 & 89.4 & 96.1 \\
-Focal Loss       & 85.8 $\pm$ 0.7 & 87.6 & 88.9 & 95.8 \\
-Curriculum       & 85.1 $\pm$ 0.9 & 86.9 & 88.1 & 95.2 \\
-Co-teaching      & 84.9 $\pm$ 0.8 & 86.7 & 87.8 & 95.0 \\
-Label Smoothing  & 83.2 $\pm$ 0.7 & 85.1 & 86.3 & 94.5 \\
-Sample Reweight  & 84.3 $\pm$ 0.9 & 86.0 & 87.2 & 94.8 \\
-Random Removal   & 82.8 $\pm$ 0.7 & 84.5 & 85.7 & 93.9 \\
-Unregulated      & 83.1 $\pm$ 0.5 & 84.9 & 86.0 & 93.5 \\
+Train & {sum(1 for r in rows if r.get("split") == "train")} & {by_split["train"]} \\
+Validation & {sum(1 for r in rows if r.get("split") == "val")} & {by_split["val"]} \\
+Test & {sum(1 for r in rows if r.get("split") == "test")} & {by_split["test"]} \\
+\midrule
+All benchmark images & {len(rows)} & {total_flagged} \\
 \bottomrule
-\end{tabular}
-\end{table}
+\end{{tabular}}
+\end{{table}}
 """
 
 
-def table_ablation():
-    """Table 3: Component ablation."""
-    return r"""
-\begin{table}[tb]
-\caption{Ablation of dual-criterion components.}
-\label{tab:ablation}
-\begin{tabular}{lcc}
+def build_semantic_table(removed_rows, retained_rows):
+    removed_by_category = Counter(row.get("category", "unknown") for row in removed_rows)
+    retained_by_category = Counter(row.get("category", "unknown") for row in retained_rows)
+    categories = sorted(set(removed_by_category) | set(retained_by_category))
+
+    body = []
+    for category in categories:
+        body.append(
+            f"{category.title()} & {removed_by_category[category]} & "
+            f"{retained_by_category[category]} \\\\"
+        )
+
+    body_str = "\n".join(body)
+    return rf"""
+\begin{{table}}[tb]
+\caption{{Semantic-audit register summary from the bundled reviewer CSV files.}}
+\label{{tab:artifact_semantic}}
+\centering
+\begin{{tabular}}{{lcc}}
 \toprule
-Configuration & Acc (\%) & $\Delta$ \\
+Category & Exclusion recommendations & Retained hard negatives \\
 \midrule
-Unregulated baseline    & 83.1 & --    \\
-Physical only           & 86.3 & +3.2  \\
-Semantic only           & 85.2 & +2.1  \\
-Physical + Semantic     & \textbf{89.8} & \textbf{+6.7} \\
+{body_str}
+\midrule
+Total & {len(removed_rows)} & {len(retained_rows)} \\
 \bottomrule
-\end{tabular}
-\end{table}
+\end{{tabular}}
+\end{{table}}
 """
 
 
-def table_capacity():
-    """Table 4: Combined model capacity + efficiency."""
-    return r"""
-\begin{table}[tb]
-\caption{Model capacity, regulation gain, and deployment efficiency.}
-\label{tab:scale}
-\begin{tabular}{lccccc}
-\toprule
-Architecture & Params & Unreg & Reg & Gain & Latency \\
-\midrule
-MobileNetV3-S  & 1.0M  & 83.1\% & 89.8\% & +6.7 & 1.2\,ms \\
-MobileNetV3-L  & 2.5M  & 86.4\% & 90.5\% & +4.1 & 2.1\,ms \\
-EfficientNet-B0 & 4.7M & 88.9\% & 91.3\% & +2.4 & 3.8\,ms \\
-MobileViT-S    & 5.6M  & 89.7\% & 91.2\% & +1.5 & 4.5\,ms \\
-ResNet-50      & 25.6M & 91.2\% & 91.8\% & +0.6 & 15.2\,ms \\
-\bottomrule
-\end{tabular}
-\end{table}
-"""
+def write_markdown(path, counts, physical_rows, removed_rows, retained_rows):
+    flag_key = "quality_flag" if physical_rows and "quality_flag" in physical_rows[0] else "removed"
+    total_flagged = sum(1 for row in physical_rows if str(row.get(flag_key, "")).lower() == "true")
 
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("# Audit Summary\n\n")
+        handle.write("## Benchmark split\n")
+        for split in ("train", "val", "test"):
+            fall = counts.get((split, "fall"), 0)
+            normal = counts.get((split, "normal"), 0)
+            handle.write(f"- {split}: {fall} fall, {normal} non-fall, {fall + normal} total\n")
 
-def table_deployment():
-    """Table 5: RPi deployment metrics."""
-    return r"""
-\begin{table}[tb]
-\caption{Deployment metrics on Raspberry Pi 4 (ARM Cortex-A72).}
-\label{tab:deploy}
-\begin{tabular}{lr}
-\toprule
-Metric & Value \\
-\midrule
-Inference latency & 1.2\,ms \\
-Peak memory       & 4.8\,MB \\
-Power draw        & 87\,mW \\
-FLOPs             & 0.03\,GMAC \\
-\bottomrule
-\end{tabular}
-\end{table}
-"""
+        handle.write("\n## Physical audit\n")
+        handle.write(f"- Scored samples: {len(physical_rows)}\n")
+        handle.write(f"- Flagged by default thresholds: {total_flagged}\n")
 
-
-def table_ood():
-    """Table 6: OOD stress evaluation."""
-    return r"""
-\begin{table}[tb]
-\caption{Out-of-distribution stress evaluation (no threshold retuning).}
-\label{tab:ood}
-\begin{tabular}{lccc}
-\toprule
-Dataset & Type & Acc (\%) & Role \\
-\midrule
-UR Fall Detection   & External RGB           & 87.3 & Truly external \\
-Leeds Millennium    & Same-source held-out    & 84.7 & Same-source   \\
-SBU Killbot         & External cross-modality & 76.2 & Cross-modality \\
-\bottomrule
-\end{tabular}
-\end{table}
-"""
-
-
-def table_hard_negatives():
-    """Table 7: Hard negative per-category accuracy."""
-    return r"""
-\begin{table}[tb]
-\caption{Per-category accuracy on 156 retained hard negatives.}
-\label{tab:hardneg}
-\begin{tabular}{lcc}
-\toprule
-Category & Count & Accuracy (\%) \\
-\midrule
-Transitional   & 68 & 82.4 \\
-Occupational   & 52 & 86.5 \\
-Theatrical     & 36 & 86.1 \\
-\midrule
-Weighted avg   & 156 & 84.6 \\
-\bottomrule
-\end{tabular}
-\end{table}
-"""
-
-
-def table_threshold():
-    """Table 8: Threshold sensitivity."""
-    return r"""
-\begin{table}[tb]
-\caption{Physical threshold sensitivity ($\pm$20\% variation).}
-\label{tab:thresh}
-\begin{tabular}{lccc}
-\toprule
-Criterion & Range & Accuracy (\%) & $\Delta$ \\
-\midrule
-Blur (px)    & 10--20 & 88.7--89.8 & $\pm$0.6 \\
-Occlusion    & 30--50\% & 89.1--89.8 & $\pm$0.4 \\
-Entropy (bits) & 1.5--2.5 & 89.3--89.8 & $\pm$0.3 \\
-\bottomrule
-\end{tabular}
-\end{table}
-"""
+        handle.write("\n## Semantic audit\n")
+        handle.write(f"- Exclusion recommendations: {len(removed_rows)}\n")
+        handle.write(f"- Retained hard negatives: {len(retained_rows)}\n")
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--results_dir", default="./results")
+    parser.add_argument(
+        "--artifact_root",
+        default=os.path.join(os.path.dirname(__file__), ".."),
+        help="Root of the supplementary artifact package",
+    )
     parser.add_argument("--output", default="./paper_tables.tex")
+    parser.add_argument("--summary", default="./artifact_summary.md")
     args = parser.parse_args()
 
+    artifact_root = os.path.abspath(args.artifact_root)
+    dataset_dir = os.path.join(artifact_root, "dataset")
+    data_dir = os.path.join(artifact_root, "data")
+
+    counts = count_benchmark(dataset_dir)
+    physical_rows = load_csv(os.path.join(data_dir, "physical_scores.csv"))
+    removed_rows = load_csv(os.path.join(data_dir, "semantic_labels_removed.csv"))
+    retained_rows = load_csv(os.path.join(data_dir, "semantic_labels_retained.csv"))
+
     tables = [
-        ("Table 1: Curation", table_curation_breakdown()),
-        ("Table 2: Baselines", table_baselines()),
-        ("Table 3: Ablation", table_ablation()),
-        ("Table 4: Capacity+Efficiency", table_capacity()),
-        ("Table 5: Deployment", table_deployment()),
-        ("Table 6: OOD", table_ood()),
-        ("Table 7: Hard Negatives", table_hard_negatives()),
-        ("Table 8: Threshold", table_threshold()),
+        build_split_table(counts),
+        build_physical_table(physical_rows),
+        build_semantic_table(removed_rows, retained_rows),
     ]
 
-    with open(args.output, "w") as f:
-        f.write("%% Auto-generated manuscript tables\n\n")
-        for name, tex in tables:
-            f.write(f"%% === {name} ===\n")
-            f.write(tex.strip())
-            f.write("\n\n")
+    with open(args.output, "w", encoding="utf-8") as handle:
+        handle.write("%% Auto-generated audit-summary tables\n\n")
+        for table in tables:
+            handle.write(table.strip())
+            handle.write("\n\n")
 
-    print(f"Generated {len(tables)} tables -> {args.output}")
+    write_markdown(args.summary, counts, physical_rows, removed_rows, retained_rows)
+    print(f"Wrote {len(tables)} tables to {args.output}")
+    print(f"Wrote summary to {args.summary}")
 
 
 if __name__ == "__main__":

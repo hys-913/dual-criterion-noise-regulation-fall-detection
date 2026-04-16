@@ -55,7 +55,7 @@ def main():
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--batch_size", type=int, default=32)
-    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--lr", type=float, default=1e-2)
     parser.add_argument("--forget_rate", type=float, default=0.2)
     parser.add_argument("--patience", type=int, default=15)
     parser.add_argument("--output_dir", default="./checkpoints")
@@ -75,8 +75,10 @@ def main():
     model1 = build_model(device)
     model2 = build_model(device)
     criterion = nn.BCEWithLogitsLoss(reduction="none")
-    opt1 = optim.AdamW(model1.parameters(), lr=args.lr, weight_decay=1e-4)
-    opt2 = optim.AdamW(model2.parameters(), lr=args.lr, weight_decay=1e-4)
+    opt1 = optim.SGD(model1.parameters(), lr=args.lr, momentum=0.9,
+                     weight_decay=1e-4)
+    opt2 = optim.SGD(model2.parameters(), lr=args.lr, momentum=0.9,
+                     weight_decay=1e-4)
 
     best_f1, patience_ctr = 0, 0
     os.makedirs(args.output_dir, exist_ok=True)

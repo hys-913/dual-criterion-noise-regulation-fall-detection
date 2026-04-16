@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """
-Physical Noise Filtering (Algorithm 1, Phase 1)
-================================================
-Filters images with severe sensory degradation:
+Physical Quality Audit (Algorithm 1, Phase 1)
+=============================================
+Scores each benchmark image for three quality criteria:
   - Motion blur > BLUR_THRESH px
   - Occlusion ratio > OCC_THRESH
   - Illumination entropy < ENT_THRESH bits
+
+The script exports sample-level scores for the full reviewer benchmark and
+marks whether each sample is flagged by the default thresholds. In the paper's
+workflow, only the training-side flags are used for regulation.
 
 Usage:
     python physical_filtering.py --data_dir <path> --manifest ../data/split_manifest.csv
@@ -51,9 +55,17 @@ def compute_illumination_entropy(img_gray: np.ndarray) -> float:
     return float(-np.sum(hist * np.log2(hist)))
 
 
+def imread_unicode(path: str):
+    """Read images robustly on Windows paths containing non-ASCII characters."""
+    data = np.fromfile(path, dtype=np.uint8)
+    if data.size == 0:
+        return None
+    return cv2.imdecode(data, cv2.IMREAD_COLOR)
+
+
 def score_image(path: str):
     """Return (blur_px, occlusion, entropy) for one image."""
-    img = cv2.imread(path)
+    img = imread_unicode(path)
     if img is None:
         return None
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -71,7 +83,7 @@ def should_remove(blur_px, occ, ent):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Physical noise filtering")
+    parser = argparse.ArgumentParser(description="Physical quality audit")
     parser.add_argument("--data_dir", required=True, help="Root of image dataset")
     parser.add_argument("--manifest", default="../data/split_manifest.csv")
     parser.add_argument("--output", default="../data/physical_scores.csv")
@@ -85,22 +97,25 @@ def main():
         samples = list(reader)
 
     results = []
-    removed_count = 0
+    flagged_count = 0
     for row in samples:
-        img_path = os.path.join(args.data_dir, row["sample_id"])
+        img_path = os.path.join(args.data_dir, *row["sample_id"].split("/"))
         scores = score_image(img_path)
         if scores is None:
             continue
         blur_px, occ, ent = scores
-        rm = should_remove(blur_px, occ, ent)
-        if rm:
-            removed_count += 1
+        flagged = should_remove(blur_px, occ, ent)
+        if flagged:
+            flagged_count += 1
         results.append({
             "sample_id": row["sample_id"],
+            "split": row.get("split", ""),
+            "label": row.get("label", ""),
+            "source_dataset": row.get("source_dataset", ""),
             "blur_score_px": f"{blur_px:.2f}",
             "occlusion_ratio": f"{occ:.3f}",
             "illumination_entropy_bits": f"{ent:.3f}",
-            "removed": str(rm),
+            "quality_flag": str(flagged),
         })
 
     with open(args.output, "w", newline="") as f:
@@ -108,8 +123,8 @@ def main():
         w.writeheader()
         w.writerows(results)
 
-    print(f"Scored {len(results)} images, removed {removed_count} "
-          f"({removed_count/len(results)*100:.1f}%)")
+    print(f"Scored {len(results)} images, flagged {flagged_count} "
+          f"({flagged_count/len(results)*100:.1f}%)")
 
 
 if __name__ == "__main__":

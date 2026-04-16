@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """
-Dual-Criterion Noise Regulation Training Pipeline
-==================================================
-Main training script for the proposed method.
+Dual-Criterion Benchmark Training Pipeline
+==========================================
+Main training script for the protocol released in the reviewer package.
 
-Implements the full pipeline:
-  1. Load regulated dataset (after physical + semantic filtering)
-  2. Train MobileNetV3-Small with standard cross-entropy
-  3. Evaluate on clean test set (no filtering applied to test/val)
+The package ships the released benchmark split directly. This script trains the
+proposed MobileNetV3-Small configuration under the shared optimizer, early
+stopping, and evaluation protocol described in the manuscript.
 
 Usage:
     python train_dual_criterion.py --data_dir <path> --seed 42 --epochs 100
@@ -121,7 +120,7 @@ def main():
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--batch_size", type=int, default=32)
-    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--lr", type=float, default=1e-2)
     parser.add_argument("--patience", type=int, default=15,
                         help="Early stopping patience")
     parser.add_argument("--output_dir", default="./checkpoints")
@@ -144,7 +143,8 @@ def main():
 
     model = get_model().to(device)
     criterion = nn.BCEWithLogitsLoss()
-    optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
+    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9,
+                          weight_decay=1e-4)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
 
     best_val_f1 = 0

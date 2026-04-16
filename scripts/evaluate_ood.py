@@ -14,7 +14,7 @@ Usage:
     python evaluate_ood.py --dataset urfall --data_dir <path> --checkpoint_dir <path>
     python evaluate_ood.py --dataset sbu --data_dir <path> --checkpoint_dir <path>
     python evaluate_ood.py --dataset leeds --data_dir <path> --checkpoint_dir <path>
-    python evaluate_ood.py --dataset all --data_dir <path> --checkpoint_dir <path>
+    python evaluate_ood.py --dataset leeds --data_dir <path> --checkpoint_dir <path>
 
 For SBU reproduction:
     1. Obtain dataset from SBU CV Lab (see DATA_ACCESS.md)
