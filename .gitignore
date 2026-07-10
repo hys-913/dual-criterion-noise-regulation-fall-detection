@@ -1,1 +1,14 @@
-dataset/
+__pycache__/
+*.pyc
+*.pyo
+*.cache
+*.log
+*.tmp
+checkpoints/
+*.pth
+outputs/
+runs/
+wandb/
+paper_tables.tex
+audit_summary.md
+

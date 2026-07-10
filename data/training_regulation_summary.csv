@@ -1,0 +1,7 @@
+item,count,scope,notes
+released_training_images,4248,benchmark split,"Training images in the released reviewer benchmark directory before applying audit exclusions."
+training_physical_quality_flags,82,training physical audit,"Default physical thresholds flag 82 training images; validation and test flags are not removed for evaluation."
+semantic_exclusion_recommendations,320,training semantic audit,"Anonymized expert-review entries recommended for exclusion because the label conflicts with single-frame evidence or requires temporal context."
+retained_hard_negatives,156,training semantic audit,"Ambiguous but valid operating cases retained for hard-negative analysis."
+documented_training_exclusion_budget,402,count-level regulation evidence,"82 physical flags plus 320 semantic exclusion recommendations; semantic review IDs are anonymized in this repository release."
+derived_retained_training_candidates_if_no_overlap,3846,derived count,"4248 minus 402; reported only as a count-level reference because path-resolved semantic exclusions are not serialized."

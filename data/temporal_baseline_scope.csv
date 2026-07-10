@@ -1,0 +1,5 @@
+baseline,type,evaluated_in_package,learned_video_model,role_in_claim
+Single-frame MobileNetV3-Small,frame classifier,internal/external/robustness,no,Main fall-presence detector
+k-of-n confirmation,resource-matched online policy,UR Fall full 70-sequence replay,no,Temporal confirmation over the same single-frame probabilities; tests alarm buffering without changing the detector
+Probability smoothing,resource-matched online policy,two-stream UR Fall pilot,no,Probability smoothing over the same single-frame probabilities; tests a minimal buffer without learned video inference
+Learned temporal network,video model,not evaluated,yes,Outside the central single-frame conversion claim; would be a different detection mode requiring video-specific training and compute

@@ -1,0 +1,10 @@
+split,source_dataset,label,count
+test,coco2017,normal,151
+test,leeds_millennium,fall,323
+test,leeds_millennium,normal,57
+train,coco2017,normal,1206
+train,leeds_millennium,fall,2620
+train,leeds_millennium,normal,422
+val,coco2017,normal,312
+val,leeds_millennium,fall,655
+val,leeds_millennium,normal,95

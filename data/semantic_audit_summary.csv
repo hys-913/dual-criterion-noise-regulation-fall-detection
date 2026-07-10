@@ -1,0 +1,7 @@
+register,category,count
+excluded,occupational,105
+excluded,theatrical,110
+excluded,transitional,105
+retained_hard_negative,occupational,52
+retained_hard_negative,theatrical,36
+retained_hard_negative,transitional,68

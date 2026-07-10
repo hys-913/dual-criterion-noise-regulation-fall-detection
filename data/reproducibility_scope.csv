@@ -1,0 +1,7 @@
+artifact,path_resolved_in_package,primary_role,reproducibility_note
+split_manifest.csv,yes,Defines released train/validation/test split,"Evaluation split is path-resolved and fixed."
+physical_scores.csv,yes,Documents physical-quality scores and flags,"Training-side physical flags can be reproduced path by path."
+semantic_labels_removed.csv,no,Documents semantic exclusion recommendations,"Review identifiers are anonymized; category counts and agreement are reproducible, but path-resolved semantic exclusions are not serialized in this repository release."
+semantic_labels_retained.csv,no,Documents retained hard negatives,"Review identifiers are anonymized; category counts support operating-limit analysis."
+training_regulation_summary.csv,count-level,Documents training-side exclusion budget,"Reports 82 physical flags, 320 semantic exclusion recommendations, and 156 retained hard negatives."
+representative_checkpoint,no,Checkpoint availability boundary,"Trained checkpoints are not bundled; scripts and dataset splits are provided for reviewer-side retraining."

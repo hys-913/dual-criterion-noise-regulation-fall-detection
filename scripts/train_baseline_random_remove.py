@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Control: Random Removal (12.1% matched fraction)
-=================================================
-Removes 12.1% of training data uniformly at random to match
-the experimental removal fraction used for the paper's control.
+Control: Random Removal matched-budget baseline
+===============================================
+Removes a pre-specified amount of training data uniformly at random.
+The default fraction reproduces the archived control run reported in the paper.
 
 Usage:
     python train_baseline_random_remove.py --data_dir <path> --seed 42
@@ -22,7 +22,7 @@ from torchvision import models
 from train_dual_criterion import FallDataset, evaluate
 
 
-REMOVE_FRACTION = 0.121  # 12.1%, matching dual-criterion removal rate
+REMOVE_FRACTION = 0.121  # archived matched-budget control used in the paper
 
 
 def main():

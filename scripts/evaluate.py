@@ -13,24 +13,24 @@ Usage:
 """
 
 import argparse
+import csv
 import os
+from pathlib import Path
 
 import numpy as np
 import torch
-import torch.nn as nn
 from torch.utils.data import DataLoader
-from torchvision import models
 from sklearn.metrics import (accuracy_score, f1_score, recall_score,
                              roc_auc_score, confusion_matrix, roc_curve)
 
-from train_dual_criterion import FallDataset
+from train_dual_criterion import FallDataset, get_model
 
 
 def load_model(checkpoint_path, device):
-    model = models.mobilenet_v3_small(weights=None)
-    model.classifier = nn.Sequential(
-        nn.Linear(576, 128), nn.ReLU(), nn.Dropout(0.2), nn.Linear(128, 1))
-    model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+    state = torch.load(checkpoint_path, map_location=device)
+    head_width = int(state.get("classifier.0.weight").shape[0])
+    model = get_model(pretrained=False, head_width=head_width)
+    model.load_state_dict(state)
     model = model.to(device)
     model.eval()
     return model
@@ -68,10 +68,29 @@ def threshold_sensitivity(probs, labels):
               f"{m['sensitivity']*100:<10.1f}{m['specificity']*100:<10.1f}")
 
 
-def multi_seed_eval(data_dir, checkpoint_dir, seeds, device):
+def write_prediction_csv(dataset, probs, labels, out_path, threshold=0.5):
+    """Write sample-level probabilities for downstream source-bias diagnostics."""
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    split_root = Path(dataset.root)
+    repo_root = split_root.parent
+    with out_path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["sample_id", "label", "prob_fall", "pred_label"])
+        for (path, _), prob, label in zip(dataset.samples, probs, labels):
+            sample_id = Path(path).relative_to(repo_root).as_posix()
+            writer.writerow([
+                sample_id,
+                "fall" if int(label) == 1 else "normal",
+                f"{float(prob):.8f}",
+                "fall" if float(prob) >= threshold else "normal",
+            ])
+
+
+def multi_seed_eval(data_dir, checkpoint_dir, seeds, device, resize_mode="stretch"):
     """Evaluate across multiple seeds and report mean +/- SD."""
     results = []
-    test_ds = FallDataset(data_dir, "test")
+    test_ds = FallDataset(data_dir, "test", resize_mode=resize_mode)
     test_loader = DataLoader(test_ds, batch_size=32, num_workers=2)
 
     for seed in seeds:
@@ -102,6 +121,10 @@ def main():
     parser.add_argument("--seeds", type=str, default="42,43,44,45,46")
     parser.add_argument("--external", help="External dataset for OOD evaluation")
     parser.add_argument("--batch_size", type=int, default=32)
+    parser.add_argument("--resize_mode", choices=["stretch", "letterbox"],
+                        default="stretch",
+                        help="Use the same preprocessing mode as training")
+    parser.add_argument("--prediction_csv", help="Optional output CSV with sample_id, label, prob_fall, pred_label")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -109,10 +132,11 @@ def main():
 
     if args.checkpoint_dir:
         print("Multi-seed evaluation:")
-        multi_seed_eval(args.data_dir, args.checkpoint_dir, seeds, device)
+        multi_seed_eval(args.data_dir, args.checkpoint_dir, seeds, device,
+                        resize_mode=args.resize_mode)
     elif args.checkpoint:
         model = load_model(args.checkpoint, device)
-        test_ds = FallDataset(args.data_dir, "test")
+        test_ds = FallDataset(args.data_dir, "test", resize_mode=args.resize_mode)
         test_loader = DataLoader(test_ds, args.batch_size, num_workers=2)
         probs, labels = predict(model, test_loader, device)
         m = compute_metrics(probs, labels)
@@ -122,13 +146,16 @@ def main():
         print(f"Specificity: {m['specificity']*100:.1f}%")
         print(f"AUC:         {m['auc']*100:.1f}%")
         threshold_sensitivity(probs, labels)
+        if args.prediction_csv:
+            write_prediction_csv(test_ds, probs, labels, args.prediction_csv)
+            print(f"Wrote predictions: {args.prediction_csv}")
 
     if args.external:
         print(f"\nOOD Evaluation on: {args.external}")
         ckpt = args.checkpoint or os.path.join(
             args.checkpoint_dir or ".", "best_seed42.pth")
         model = load_model(ckpt, device)
-        ext_ds = FallDataset(args.external, "test")
+        ext_ds = FallDataset(args.external, "test", resize_mode=args.resize_mode)
         ext_loader = DataLoader(ext_ds, args.batch_size, num_workers=2)
         probs, labels = predict(model, ext_loader, device)
         m = compute_metrics(probs, labels)

@@ -24,11 +24,58 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision import models, transforms
 from sklearn.metrics import (accuracy_score, f1_score, recall_score,
                              precision_score, roc_auc_score, confusion_matrix)
-from PIL import Image
+from PIL import Image, ImageOps
+
+
+class ResizePad:
+    """Aspect-ratio preserving resize followed by symmetric padding."""
+    def __init__(self, size, fill=0):
+        self.size = size if isinstance(size, tuple) else (size, size)
+        self.fill = fill
+
+    def __call__(self, img):
+        target_w, target_h = self.size
+        img = ImageOps.contain(img, self.size, method=Image.BILINEAR)
+        pad_w = target_w - img.size[0]
+        pad_h = target_h - img.size[1]
+        left = pad_w // 2
+        top = pad_h // 2
+        right = pad_w - left
+        bottom = pad_h - top
+        return ImageOps.expand(img, (left, top, right, bottom), fill=self.fill)
+
+
+def build_transform(augment=False, resize_mode="stretch"):
+    if resize_mode == "letterbox":
+        ops = [ResizePad((224, 224))]
+        if augment:
+            ops.extend([
+                transforms.RandomHorizontalFlip(),
+                transforms.RandomAffine(degrees=5, translate=(0.03, 0.03),
+                                        scale=(0.95, 1.05), fill=0),
+                transforms.ColorJitter(0.2, 0.2, 0.2, 0.1),
+            ])
+    else:
+        if augment:
+            ops = [
+                transforms.Resize((256, 256)),
+                transforms.RandomCrop(224),
+                transforms.RandomHorizontalFlip(),
+                transforms.ColorJitter(0.2, 0.2, 0.2, 0.1),
+            ]
+        else:
+            ops = [transforms.Resize((224, 224))]
+
+    ops.extend([
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406],
+                             [0.229, 0.224, 0.225]),
+    ])
+    return transforms.Compose(ops)
 
 
 class FallDataset(Dataset):
-    def __init__(self, root, split="train", augment=False):
+    def __init__(self, root, split="train", augment=False, resize_mode="stretch"):
         self.root = os.path.join(root, split)
         self.samples = []
         for label_idx, cls in enumerate(["normal", "fall"]):
@@ -39,23 +86,7 @@ class FallDataset(Dataset):
                 if fname.lower().endswith((".jpg", ".jpeg", ".png")):
                     self.samples.append((os.path.join(cls_dir, fname), label_idx))
 
-        if augment:
-            self.transform = transforms.Compose([
-                transforms.Resize((256, 256)),
-                transforms.RandomCrop(224),
-                transforms.RandomHorizontalFlip(),
-                transforms.ColorJitter(0.2, 0.2, 0.2, 0.1),
-                transforms.ToTensor(),
-                transforms.Normalize([0.485, 0.456, 0.406],
-                                     [0.229, 0.224, 0.225]),
-            ])
-        else:
-            self.transform = transforms.Compose([
-                transforms.Resize((224, 224)),
-                transforms.ToTensor(),
-                transforms.Normalize([0.485, 0.456, 0.406],
-                                     [0.229, 0.224, 0.225]),
-            ])
+        self.transform = build_transform(augment=augment, resize_mode=resize_mode)
 
     def __len__(self):
         return len(self.samples)
@@ -66,13 +97,14 @@ class FallDataset(Dataset):
         return self.transform(img), label
 
 
-def get_model():
-    model = models.mobilenet_v3_small(weights="IMAGENET1K_V1")
+def get_model(pretrained=True, head_width=128):
+    weights = "IMAGENET1K_V1" if pretrained else None
+    model = models.mobilenet_v3_small(weights=weights)
     model.classifier = nn.Sequential(
-        nn.Linear(576, 128),
+        nn.Linear(576, head_width),
         nn.ReLU(),
         nn.Dropout(0.2),
-        nn.Linear(128, 1),
+        nn.Linear(head_width, 1),
     )
     return model
 
@@ -124,16 +156,27 @@ def main():
     parser.add_argument("--patience", type=int, default=15,
                         help="Early stopping patience")
     parser.add_argument("--output_dir", default="./checkpoints")
+    parser.add_argument("--resize_mode", choices=["stretch", "letterbox"],
+                        default="stretch",
+                        help="stretch keeps the original benchmark preprocessing; "
+                             "letterbox preserves posture aspect ratio by resize+pad")
+    parser.add_argument("--pretrained", choices=["imagenet", "none"],
+                        default="imagenet",
+                        help="Backbone initialization")
+    parser.add_argument("--head_width", type=int, default=128,
+                        help="Classifier hidden width used in the released protocol")
     args = parser.parse_args()
 
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Device: {device} | Seed: {args.seed}")
+    print(f"Device: {device} | Seed: {args.seed} | Resize: {args.resize_mode} | "
+          f"Head: {args.head_width}")
 
-    train_ds = FallDataset(args.data_dir, "train", augment=True)
-    val_ds = FallDataset(args.data_dir, "val")
-    test_ds = FallDataset(args.data_dir, "test")
+    train_ds = FallDataset(args.data_dir, "train", augment=True,
+                           resize_mode=args.resize_mode)
+    val_ds = FallDataset(args.data_dir, "val", resize_mode=args.resize_mode)
+    test_ds = FallDataset(args.data_dir, "test", resize_mode=args.resize_mode)
 
     train_loader = DataLoader(train_ds, args.batch_size, shuffle=True, num_workers=2)
     val_loader = DataLoader(val_ds, args.batch_size, shuffle=False, num_workers=2)
@@ -141,7 +184,8 @@ def main():
 
     print(f"Train: {len(train_ds)} | Val: {len(val_ds)} | Test: {len(test_ds)}")
 
-    model = get_model().to(device)
+    model = get_model(pretrained=args.pretrained == "imagenet",
+                      head_width=args.head_width).to(device)
     criterion = nn.BCEWithLogitsLoss()
     optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9,
                           weight_decay=1e-4)
